@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  email_service:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      sh -c "pip install -r requirements.txt &&
+             python consumer/consumer.py"
+    environment:
+      DJANGO_SETTINGS_MODULE: email_service.settings
+
+      RESEND_API_KEY: re_NRY2j6Ek_Jpk6jymYqPN7o6hVWcVHWtPZ
+      DEFAULT_FROM_EMAIL: onboarding@resend.dev
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_QUEUE: email_queue
+    depends_on:
+      - rabbitmq
