@@ -1,29 +1,27 @@
-import os
-
-import resend
+from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
 
 
 def send_email_message(payload: dict) -> None:
-    resend.api_key = os.getenv("RESEND_API_KEY")
-    if not resend.api_key:
-        raise ValueError("Missing RESEND_API_KEY environment variable")
-
     to_email = payload.get("to")
     subject = payload.get("subject", "No subject")
     message = payload.get("message", "")
-    from_email = payload.get("from", os.getenv("DEFAULT_FROM_EMAIL"))
+    html_content = payload.get("html")
+    from_email = payload.get("from", settings.DEFAULT_FROM_EMAIL)
 
     if not to_email:
         raise ValueError("Payload must include 'to' field")
     if not from_email:
-        raise ValueError("Missing DEFAULT_FROM_EMAIL or payload 'from'")
+        raise ValueError("Payload must include 'from' or DEFAULT_FROM_EMAIL must be configured")
 
-    response = resend.Emails.send(
-        {
-            "from": from_email,
-            "to": [to_email],
-            "subject": subject,
-            "html": f"<p>{message}</p>",
-        }
+    plain_text = message or "Notificacion de Loyalty Ops"
+    html_body = html_content or f"<p>{plain_text}</p>"
+    email = EmailMultiAlternatives(
+        subject=subject,
+        body=plain_text,
+        from_email=from_email,
+        to=[to_email],
     )
-    print("Correo enviado:", response)
+    email.attach_alternative(html_body, "text/html")
+    email.send(fail_silently=False)
+    print(f"Correo enviado via SMTP a {to_email}")
