@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import sqlite3
 import ssl
 import time
@@ -7,6 +8,7 @@ from html import escape
 
 import django
 import pika
+import smtplib
 from django.conf import settings
 
 from sender.email_sender import send_email_message
@@ -28,8 +30,11 @@ def _is_transient_error(exc: Exception) -> bool:
         (
             TimeoutError,
             ConnectionError,
+            OSError,
+            socket.timeout,
             pika.exceptions.AMQPConnectionError,
             sqlite3.OperationalError,
+            smtplib.SMTPException,
         ),
     )
 
