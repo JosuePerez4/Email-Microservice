@@ -16,8 +16,10 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "email_service.settings")
 django.setup()
 
 
-WELCOME_REQUIRED_FIELDS = ("envio_id", "cliente_id", "nombre", "email", "estado", "direccion")
 POINTS_REQUIRED_FIELDS = ("cliente_id", "nombre", "email")
+WELCOME_ROUTING_KEYS = {"envio.bienvenida.creado"}
+POINTS_INCREASE_ROUTING_KEYS = {"puntos.aumentados"}
+POINTS_REDEEM_ROUTING_KEYS = {"puntos.canjeados"}
 
 
 def _is_transient_error(exc: Exception) -> bool:
@@ -91,6 +93,32 @@ def _parse_event(body: bytes) -> dict:
     return evento
 
 
+def _get_field(evento: dict, *keys, default=None):
+    for key in keys:
+        value = evento.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+def _normalize_event(evento: dict) -> dict:
+    return {
+        "event_id": _get_field(evento, "event_id", "eventId", "evento_id", "eventoId"),
+        "envio_id": _get_field(evento, "envio_id", "envioId"),
+        "movimiento_id": _get_field(evento, "movimiento_id", "movimientoId"),
+        "cliente_id": _get_field(evento, "cliente_id", "clienteId"),
+        "nombre": _get_field(evento, "nombre"),
+        "email": _get_field(evento, "email"),
+        "estado": _get_field(evento, "estado"),
+        "direccion": _get_field(evento, "direccion"),
+        "fecha": _get_field(evento, "fecha"),
+        "puntos_sumados": _get_field(evento, "puntos_sumados", "puntosSumados"),
+        "puntos_canjeados": _get_field(evento, "puntos_canjeados", "puntosCanjeados"),
+        "puntos_actuales": _get_field(evento, "puntos_actuales", "puntosActuales"),
+        "puntos": _get_field(evento, "puntos"),
+    }
+
+
 def _resolve_event_id(evento: dict, routing_key: str) -> str:
     if evento.get("event_id"):
         return str(evento["event_id"])
@@ -104,26 +132,35 @@ def _resolve_event_id(evento: dict, routing_key: str) -> str:
 
 
 def _build_welcome_email_payload(evento: dict) -> dict:
-    missing_fields = [field for field in WELCOME_REQUIRED_FIELDS if not evento.get(field)]
-    if missing_fields:
-        raise ValueError(f"Missing required fields for welcome event: {', '.join(missing_fields)}")
+    base_missing_fields = [field for field in ("cliente_id", "nombre", "email") if not evento.get(field)]
+    if base_missing_fields:
+        raise ValueError(
+            f"Missing required fields for welcome event: {', '.join(base_missing_fields)}"
+        )
 
-    nombre = evento["nombre"]
-    estado = evento["estado"]
-    envio_id = evento["envio_id"]
-    direccion = evento["direccion"]
-    html = (
-        f"<p>Hola {escape(str(nombre))},</p>"
-        "<p>Bienvenido/a al sistema de puntos <strong>Loyalty Ops</strong>.</p>"
-        "<p>Tu cuenta inicia con <strong>0 puntos</strong> y estamos felices de tenerte aqui.</p>"
-        "<p>"
-        "Tu paquete de bienvenida fue registrado con estado: "
-        f"<strong>{escape(str(estado))}</strong><br/>"
-        f"ID de envio: <strong>{escape(str(envio_id))}</strong><br/>"
-        f"Direccion: <strong>{escape(str(direccion))}</strong>"
-        "</p>"
+    nombre = escape(str(evento["nombre"]))
+    estado = evento.get("estado")
+    envio_id = evento.get("envio_id")
+    direccion = evento.get("direccion")
+
+    html_parts = [
+        f"<p>Hola {nombre},</p>",
+        "<p>Bienvenido/a al sistema de puntos <strong>Loyalty Ops</strong>.</p>",
+        "<p>Tu cuenta inicia con <strong>0 puntos</strong> y estamos felices de tenerte aqui.</p>",
+    ]
+    if estado and envio_id and direccion:
+        html_parts.append(
+            "<p>"
+            "Tu paquete de bienvenida fue registrado con estado: "
+            f"<strong>{escape(str(estado))}</strong><br/>"
+            f"ID de envio: <strong>{escape(str(envio_id))}</strong><br/>"
+            f"Direccion: <strong>{escape(str(direccion))}</strong>"
+            "</p>"
+        )
+    html_parts.append(
         "<p>Te avisaremos por correo cada vez que tus puntos aumenten o cuando realices un canje.</p>"
     )
+    html = "".join(html_parts)
     return {
         "to": evento["email"],
         "subject": "Bienvenido/a a Loyalty Ops",
@@ -180,11 +217,11 @@ def _build_points_redeem_email_payload(evento: dict) -> dict:
 
 
 def _build_email_payload(evento: dict, routing_key: str) -> dict:
-    if routing_key == "envio.bienvenida.creado":
+    if routing_key in WELCOME_ROUTING_KEYS:
         return _build_welcome_email_payload(evento)
-    if routing_key == "puntos.aumentados":
+    if routing_key in POINTS_INCREASE_ROUTING_KEYS:
         return _build_points_increase_email_payload(evento)
-    if routing_key == "puntos.canjeados":
+    if routing_key in POINTS_REDEEM_ROUTING_KEYS:
         return _build_points_redeem_email_payload(evento)
     raise ValueError(f"Unsupported routing key for email notifications: {routing_key}")
 
@@ -192,7 +229,7 @@ def _build_email_payload(evento: dict, routing_key: str) -> dict:
 def callback(channel, method, properties, body):
     try:
         routing_key = method.routing_key
-        evento = _parse_event(body)
+        evento = _normalize_event(_parse_event(body))
         event_id = _resolve_event_id(evento, routing_key)
 
         if _already_processed(event_id):
