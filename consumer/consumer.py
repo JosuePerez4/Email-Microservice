@@ -226,6 +226,26 @@ def _build_email_payload(evento: dict, routing_key: str) -> dict:
     raise ValueError(f"Unsupported routing key for email notifications: {routing_key}")
 
 
+def _publish_delivery_status_event(channel, evento: dict, new_status: str) -> None:
+    envio_id = evento.get("envio_id")
+    if not envio_id:
+        return
+
+    payload = {
+        "envio_id": envio_id,
+        "cliente_id": evento.get("cliente_id"),
+        "nombre": evento.get("nombre"),
+        "email": evento.get("email"),
+        "estado": new_status,
+    }
+    channel.basic_publish(
+        exchange=settings.RABBITMQ_EXCHANGE,
+        routing_key=settings.RABBITMQ_ENVIO_ENVIADO_ROUTING_KEY,
+        body=json.dumps(payload),
+        properties=pika.BasicProperties(content_type="application/json", delivery_mode=2),
+    )
+
+
 def callback(channel, method, properties, body):
     try:
         routing_key = method.routing_key
@@ -239,6 +259,8 @@ def callback(channel, method, properties, body):
 
         email_payload = _build_email_payload(evento, routing_key)
         send_email_message(email_payload)
+        if routing_key in WELCOME_ROUTING_KEYS:
+            _publish_delivery_status_event(channel, evento, "ENVIADO")
         _mark_as_processed(event_id)
         print(
             f"[x] Notification email sent to {email_payload.get('to')} "

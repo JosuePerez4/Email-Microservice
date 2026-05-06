@@ -75,3 +75,7 @@ RABBITMQ_ROUTING_KEYS = [
 ]
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "email-bienvenida-queue")
 RABBITMQ_MAX_RETRIES = int(os.getenv("RABBITMQ_MAX_RETRIES", "5"))
+RABBITMQ_ENVIO_ENVIADO_ROUTING_KEY = os.getenv(
+    "RABBITMQ_ENVIO_ENVIADO_ROUTING_KEY",
+    "envio.bienvenida.enviado",
+)
