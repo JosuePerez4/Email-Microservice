@@ -38,11 +38,10 @@ USE_TZ = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# CORS
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS abierto para cualquier origen
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = False
+CORS_PREFLIGHT_MAX_AGE = 3600
 
 # Email settings
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
